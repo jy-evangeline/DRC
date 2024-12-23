@@ -10,6 +10,7 @@ from scipy.stats import spearmanr
 from scipy.interpolate import interp1d
 import pandas as pd
 import numpy as np
+from berk_jones import berk_jones
 
 def distortion_risk_control_bj(x_cal, y_cal, alpha, beta):
     pass
@@ -85,6 +86,43 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
 
     return lambda_optimal
 
+def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
+    # Calculate epsilon using DKW inequality
+    epsilon = np.sqrt(np.log(1 / 0.05) / (2 * n_samples))
+    
+    lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # 0.0035, 0.9745
+    risks = []
+    
+    for lambda_ in tqdm(lambda_candidates):
+        r_lambdas = []
+        for key, val in x_cal.items():
+            detoxify_ft_scores = val['detoxify_ft'][0].reshape(-1)
+            detoxify_human_scores = val['detoxify_human']
+            C_all = y_cal[key]
+            C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
+            if len(C_lambda_) == 0:
+                continue
+            adjusted_scores = [detoxify_human_scores[idx] for idx, _ in C_lambda_]
+            r_lambda_ = max(adjusted_scores)
+            r_lambdas.append(r_lambda_)
+        
+        n = len(r_lambdas)
+        LB = berk_jones(n, 0.05)
+        for i,item in LB:
+            if item >= beta:
+                n_beta = i
+                break
+        sorted_scores = np.sort(r_lambdas)
+        risks.append(np.mean(sorted_scores[n_beta:]))
+
+    valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
+    if valid_lambdas.size > 0:
+        lambda_optimal = np.max(valid_lambdas)
+    else:
+        lambda_optimal = None
+
+    return lambda_optimal
+
 def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, beta):
     detoxify_ft_all = []
     detoxify_human_all = []
@@ -147,7 +185,7 @@ def save_scores(scores, folder_name='score_results',use_dkw=False):
     with open(os.path.join(folder_name, 'scores.pkl'), 'wb') as f:
         pickle.dump(scores, f)
 
-def main(n_trials, f1_score, use_dkw, alpha,beta):
+def main(n_trials, f1_score, use_dkw, use_bj, alpha,beta):
     directory = './results_llama2_7B_Real/test_toxic_new'
     conformal_directory = f'./results_llama2_7B_Real/conformal_set/conformal_set_size_F1_{f1_score}.pkl'
     
@@ -205,12 +243,16 @@ def main(n_trials, f1_score, use_dkw, alpha,beta):
         
         if use_dkw:
             lambda_optimal = distortion_risk_control_DKW(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
+        elif use_bj:
+            lambda_optimal = distortion_risk_control_BJ(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
         else:
             lambda_optimal = distortion_risk_control(x_cal_train, y_cal_train, alpha, beta)
         
-        folder_name = f'./results_detoxify_0.3/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
+        folder_name = f'./results_detoxify_0.15/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
         if use_dkw: 
             folder_name += '_use_dkw'
+        if use_bj: 
+            folder_name += '_use_bj'
         os.makedirs(folder_name, exist_ok=True)
         if lambda_optimal is not None:
             with open(os.path.join(folder_name, 'lambda_optimal.txt'), 'w') as f:
@@ -241,8 +283,9 @@ if __name__ == '__main__':
     parser.add_argument("--n_trials", type=int, default=1, help="Number of trials to run")
     parser.add_argument("--f1_score", type=float, required=True, help="F1 score to use in filename")
     parser.add_argument("--use_dkw", type=bool, default=False, help="Whether to use the DKW approach")
+    parser.add_argument("--use_bj", type=bool, default=False, help="Whether to use the DKW approach")
     parser.add_argument("--alpha", type=float, default=0.35, help="Whether to use the DKW approach")
     parser.add_argument("--beta", type=float, default=0.75, help="Whether to use the DKW approach")
     args = parser.parse_args()
     
-    main(args.n_trials, args.f1_score, args.use_dkw,args.alpha,args.beta)
+    main(args.n_trials, args.f1_score, args.use_dkw, args.use_bj, args.alpha,args.beta)
