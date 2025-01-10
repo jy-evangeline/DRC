@@ -10,8 +10,11 @@ from scipy.stats import spearmanr
 from scipy.interpolate import interp1d
 import pandas as pd
 import numpy as np
+from scipy.stats import gaussian_kde
 from berk_jones import berk_jones
 
+def distortion_risk_control_bj(x_cal, y_cal, alpha, beta):
+    pass
 
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # Range of lambda values for tuning
@@ -34,11 +37,11 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
 
         var_r_lambda = np.percentile(r_lambdas,beta * 100)
         # empirical_risk = np.mean(r_lambdas)
-        empirical_risk = np.mean([r for r in r_lambdas if r > var_r_lambda])
-        max_values = np.maximum(r_lambdas, var_r_lambda)
+        kde = gaussian_kde(r_lambdas)
+        density_value = kde(var_r_lambda)[0]
 
-        sigma_lambda = 1/(1-beta)*np.std(max_values)
-        risks.append(empirical_risk+1.645*sigma_lambda/np.sqrt(len(r_lambdas)))
+        sigma_lambda = beta*(1-beta)/density_value**2
+        risks.append(var_r_lambda+1.645*sigma_lambda)
 
     risks  = np.array(risks)
     print(max(risks),min(risks))
@@ -70,11 +73,9 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
             r_lambda_ = max(adjusted_scores)
             r_lambdas.append(r_lambda_)
         
-        n = len(r_lambdas)
-        n_beta = min(int(np.ceil(n*(beta+epsilon)))-1,n-1)
-        sorted_scores = np.sort(r_lambdas)
-        empirical_cvar =  (n_beta/n-beta-epsilon)*sorted_scores[n_beta] + 1/n*np.sum([sorted_scores[i] for i in range(n_beta+1,n)])+epsilon*sorted_scores[-1]
-        risks.append(empirical_cvar/(1-beta))
+
+        var_r_lambda = np.percentile(r_lambdas,(beta+epsilon) * 100)
+        risks.append(var_r_lambda)
 
     valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
     if valid_lambdas.size > 0:
@@ -110,7 +111,7 @@ def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
                 n_beta = i
                 break
         sorted_scores = np.sort(r_lambdas)
-        risks.append(np.mean(sorted_scores[n_beta:]))
+        risks.append(sorted_scores[n_beta])
 
     valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
     if valid_lambdas.size > 0:
@@ -163,19 +164,19 @@ def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, be
 
     df_selected_combined = pd.DataFrame(rows_selected_non_selected, columns=['key', 'C_lambda_selected', 'C_lambda_excluded'])
 
-    output_selected_combined_path = "./detoxify_selected_combined_results.csv"
+    output_selected_combined_path = "./detoxify_selected_combined_results_var.csv"
     df_selected_combined.to_csv(output_selected_combined_path, index=False)
     
     sorted_human_scores = np.sort(detoxify_human_all_max)
     threshold_index = int(np.ceil(beta * len(sorted_human_scores))) - 1
-    beta_cvar_human_score = np.mean(sorted_human_scores[threshold_index:])
+    var_human_score = sorted_human_scores[threshold_index]
     
     mean_human_score = np.mean(detoxify_human_all)
     percentile_95_human_score = scoreatpercentile(detoxify_human_all, 95)
     max_human_score = np.max(detoxify_human_all)
     average_sample_count = np.mean(sample_counts) if sample_counts else 0
 
-    return mean_human_score, percentile_95_human_score, max_human_score, beta_cvar_human_score, average_sample_count
+    return mean_human_score, percentile_95_human_score, max_human_score, var_human_score, average_sample_count
 
 def save_scores(scores, folder_name='score_results',use_dkw=False):
     os.makedirs(folder_name, exist_ok=True)
@@ -245,7 +246,7 @@ def main(n_trials, f1_score, use_dkw, use_bj, alpha,beta):
         else:
             lambda_optimal = distortion_risk_control(x_cal_train, y_cal_train, alpha, beta)
         
-        folder_name = f'./results_detoxify_0.15/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
+        folder_name = f'./var_results_detoxify_0.15/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
         if use_dkw: 
             folder_name += '_use_dkw'
         if use_bj: 
@@ -285,4 +286,4 @@ if __name__ == '__main__':
     parser.add_argument("--beta", type=float, default=0.75, help="Whether to use the DKW approach")
     args = parser.parse_args()
     
-    main(args.n_trials, args.f1_score, args.use_dkw, args.use_bj, args.alpha,args.beta)
+    main(args.n_trials, args.f1_score, args.use_dkw,args.use_bj, args.alpha,args.beta)
