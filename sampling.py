@@ -11,6 +11,7 @@ from scipy.interpolate import interp1d
 import pandas as pd
 import numpy as np
 from berk_jones import berk_jones
+from berk_jones import berk_jones
 
 
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
