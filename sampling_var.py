@@ -12,9 +12,8 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 from berk_jones import berk_jones
-
-def distortion_risk_control_bj(x_cal, y_cal, alpha, beta):
-    pass
+from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KernelDensity
 
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # Range of lambda values for tuning
