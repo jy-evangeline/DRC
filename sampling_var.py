@@ -40,7 +40,7 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
                     cv=min(10,len(r_lambdas)-1))
         grid.fit(np.array(r_lambdas).reshape(-1, 1))
         kde = grid.best_estimator_
-        pdf = np.exp(kde.score_samples(r_lambdas.reshape(-1, 1)))
+        pdf = np.exp(kde.score_samples(np.array(r_lambdas).reshape(-1, 1)))
         density_value = pdf[n_beta]
 
         sigma_lambda = beta*(1-beta)/density_value**2
