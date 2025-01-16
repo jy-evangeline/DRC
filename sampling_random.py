@@ -11,8 +11,9 @@ from scipy.interpolate import interp1d
 import pandas as pd
 import numpy as np
 from berk_jones import berk_jones
-from berk_jones import berk_jones
 
+def distortion_risk_control_bj(x_cal, y_cal, alpha, beta):
+    pass
 
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # Range of lambda values for tuning
@@ -29,7 +30,7 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
             C_lambda_ = [(idx,val) for idx, val in C_all if detoxify_ft_scores[idx] <= lambda_]
             if len(C_lambda_) == 0:
                 continue
-            r_lambda_ = max([detoxify_human_scores[idx] for idx, _ in C_lambda_])
+            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
             r_lambdas.append(r_lambda_)
             # C_sets[lambda_][key] = C_lambda_
 
@@ -43,9 +44,9 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
 
     risks  = np.array(risks)
     print(max(risks),min(risks))
-    valid_lambdas = lambda_candidates[risks <= alpha]
+    valid_lambdas = lambda_candidates[risks > alpha]
     if valid_lambdas.size > 0:
-        lambda_optimal = np.max(valid_lambdas)
+        lambda_optimal = np.min(valid_lambdas)
     else:
         lambda_optimal = None
     return lambda_optimal
@@ -67,8 +68,7 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
                 continue
-            adjusted_scores = [detoxify_human_scores[idx] for idx, _ in C_lambda_]
-            r_lambda_ = max(adjusted_scores)
+            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
             r_lambdas.append(r_lambda_)
         
         n = len(r_lambdas)
@@ -77,15 +77,17 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
         empirical_cvar =  (n_beta/n-beta-epsilon)*sorted_scores[n_beta] + 1/n*np.sum([sorted_scores[i] for i in range(n_beta+1,n)])+epsilon*sorted_scores[-1]
         risks.append(empirical_cvar/(1-beta))
 
-    valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
+    valid_lambdas = lambda_candidates[np.array(risks) > alpha]
     if valid_lambdas.size > 0:
-        lambda_optimal = np.max(valid_lambdas)
+        lambda_optimal = np.min(valid_lambdas)
     else:
         lambda_optimal = None
 
     return lambda_optimal
 
 def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
+    # Calculate epsilon using DKW inequality
+    epsilon = np.sqrt(np.log(1 / 0.05) / (2 * n_samples))
     
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # 0.0035, 0.9745
     risks = []
@@ -99,13 +101,12 @@ def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
                 continue
-            adjusted_scores = [detoxify_human_scores[idx] for idx, _ in C_lambda_]
-            r_lambda_ = max(adjusted_scores)
+            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
             r_lambdas.append(r_lambda_)
         
         n = len(r_lambdas)
         LB = berk_jones(n, 0.95)
-
+        
         for i,item in enumerate(LB):
             if item >= beta:
                 n_beta = i
@@ -113,12 +114,11 @@ def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
         sorted_scores = np.sort(r_lambdas)
         risks.append(np.mean(sorted_scores[n_beta:]))
 
-    valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
+    valid_lambdas = lambda_candidates[np.array(risks) > alpha]
     if valid_lambdas.size > 0:
-        lambda_optimal = np.max(valid_lambdas)
+        lambda_optimal = np.min(valid_lambdas)
     else:
         lambda_optimal = None
-
     return lambda_optimal
 
 def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, beta):
@@ -157,14 +157,14 @@ def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, be
 
         detoxify_human_all.extend([item[3] for item in C_lambda_selected])
         try:
-            detoxify_human_all_max.append(np.max([item[3] for item in C_lambda_selected]))
+            detoxify_human_all_max.append(C_lambda_selected[0][3])
         except:
             pass
         detoxify_ft_all.extend([item[2] for item in C_lambda_non_selected])
 
     df_selected_combined = pd.DataFrame(rows_selected_non_selected, columns=['key', 'C_lambda_selected', 'C_lambda_excluded'])
 
-    output_selected_combined_path = "./detoxify_selected_combined_results.csv"
+    output_selected_combined_path = "./detoxify_selected_combined_results_random.csv"
     df_selected_combined.to_csv(output_selected_combined_path, index=False)
     
     sorted_human_scores = np.sort(detoxify_human_all_max)
@@ -246,7 +246,7 @@ def main(n_trials, f1_score, use_dkw, use_bj, alpha,beta):
         else:
             lambda_optimal = distortion_risk_control(x_cal_train, y_cal_train, alpha, beta)
         
-        folder_name = f'./results_detoxify_0.15/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
+        folder_name = f'./results_detoxify_0.15_random/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
         if use_dkw: 
             folder_name += '_use_dkw'
         if use_bj: 
