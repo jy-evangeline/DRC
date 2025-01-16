@@ -35,10 +35,9 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
             # C_sets[lambda_][key] = C_lambda_
 
         n_beta=int(np.ceil(beta * len(r_lambdas))) - 1
-        # empirical_risk = np.mean(r_lambdas)
         grid = GridSearchCV(KernelDensity(),
                     {'bandwidth': np.linspace(0.1, 1.0, 30)},
-                    cv=20)
+                    cv=min(10,len(r_lambdas)-1))
         grid.fit(np.array(r_lambdas).reshape(-1, 1))
         kde = grid.best_estimator_
         pdf = np.exp(kde.score_samples(r_lambdas.reshape(-1, 1)))
