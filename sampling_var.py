@@ -34,6 +34,7 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
             r_lambdas.append(r_lambda_)
             # C_sets[lambda_][key] = C_lambda_
 
+        var_r_lambda = np.percentile(r_lambdas,beta*100)
         n_beta=int(np.ceil(beta * len(r_lambdas))) - 1
         grid = GridSearchCV(KernelDensity(),
                     {'bandwidth': np.linspace(0.1, 1.0, 30)},
