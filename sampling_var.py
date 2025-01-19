@@ -37,7 +37,7 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
         var_r_lambda = np.percentile(r_lambdas,beta*100)
         n_beta=int(np.ceil(beta * len(r_lambdas))) - 1
         grid = GridSearchCV(KernelDensity(),
-                    {'bandwidth': np.linspace(0.1, 1.0, 30)},
+                    {'bandwidth': np.linspace(0.1, 1.0, 10)},
                     cv=min(10,len(r_lambdas)-1))
         grid.fit(np.array(r_lambdas).reshape(-1, 1))
         kde = grid.best_estimator_
@@ -45,7 +45,7 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
         density_value = pdf[n_beta]
 
         sigma_lambda = beta*(1-beta)/density_value**2
-        risks.append(var_r_lambda+1.645*sigma_lambda)
+        risks.append(var_r_lambda+1.645*np.sqrt(sigma_lambda)/np.sqrt(len(r_lambdas)))
 
     risks  = np.array(risks)
     print(max(risks),min(risks))
