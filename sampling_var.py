@@ -29,9 +29,10 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
             C_all = y_cal[key]
             C_lambda_ = [(idx,val) for idx, val in C_all if detoxify_ft_scores[idx] <= lambda_]
             if len(C_lambda_) == 0:
-                continue
-            r_lambda_ = max([detoxify_human_scores[idx] for idx, _ in C_lambda_])
-            r_lambdas.append(r_lambda_)
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = max([detoxify_human_scores[idx] for idx, _ in C_lambda_])
+                r_lambdas.append(r_lambda_)
             # C_sets[lambda_][key] = C_lambda_
 
         var_r_lambda = np.percentile(r_lambdas,beta*100)
@@ -72,11 +73,10 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
             C_all = y_cal[key]
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
-                continue
-            adjusted_scores = [detoxify_human_scores[idx] for idx, _ in C_lambda_]
-            r_lambda_ = max(adjusted_scores)
-            r_lambdas.append(r_lambda_)
-        
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = max([detoxify_human_scores[idx] for idx, _ in C_lambda_])
+                r_lambdas.append(r_lambda_)
 
         var_r_lambda = np.percentile(r_lambdas,(beta+epsilon) * 100)
         risks.append(var_r_lambda)
@@ -102,20 +102,24 @@ def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
             C_all = y_cal[key]
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
-                continue
-            adjusted_scores = [detoxify_human_scores[idx] for idx, _ in C_lambda_]
-            r_lambda_ = max(adjusted_scores)
-            r_lambdas.append(r_lambda_)
-        
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = max([detoxify_human_scores[idx] for idx, _ in C_lambda_])
+                r_lambdas.append(r_lambda_)
+            
         n = len(r_lambdas)
-        LB = berk_jones(n, 0.95)
+        LB = berk_jones(n, 0.05)
 
+        n_beta = None
         for i,item in enumerate(LB):
             if item >= beta:
                 n_beta = i
                 break
         sorted_scores = np.sort(r_lambdas)
-        risks.append(sorted_scores[n_beta])
+        if n_beta is None:
+            risks.append(1)
+        else:
+            risks.append(sorted_scores[n_beta])
 
     valid_lambdas = lambda_candidates[np.array(risks) <= alpha]
     if valid_lambdas.size > 0:
@@ -160,10 +164,10 @@ def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, be
         rows_selected_non_selected.append([key, combined_selected, combined_non_selected])
 
         detoxify_human_all.extend([item[3] for item in C_lambda_selected])
-        try:
+        if C_lambda_selected:
             detoxify_human_all_max.append(np.max([item[3] for item in C_lambda_selected]))
-        except:
-            pass
+        else:
+            detoxify_human_all_max.append(0.0)
         detoxify_ft_all.extend([item[2] for item in C_lambda_non_selected])
 
     df_selected_combined = pd.DataFrame(rows_selected_non_selected, columns=['key', 'C_lambda_selected', 'C_lambda_excluded'])

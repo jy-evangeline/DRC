@@ -18,8 +18,6 @@ def distortion_risk_control_bj(x_cal, y_cal, alpha, beta):
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # Range of lambda values for tuning
     risks = []
-    # C_sets = defaultdict(dict)
-
 
     for lambda_ in tqdm(lambda_candidates):
         r_lambdas = []
@@ -28,12 +26,15 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
             detoxify_human_scores = val['detoxify_human']
             C_all = y_cal[key]
             C_lambda_ = [(idx,val) for idx, val in C_all if detoxify_ft_scores[idx] <= lambda_]
+            
+            # if C_lambda_ is an empty set, the risk should be 0.
             if len(C_lambda_) == 0:
-                continue
-            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
-            r_lambdas.append(r_lambda_)
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
+                r_lambdas.append(r_lambda_)
             # C_sets[lambda_][key] = C_lambda_
-
+        assert len(r_lambdas) == len(x_cal)
         var_r_lambda = np.percentile(r_lambdas,beta * 100)
         # empirical_risk = np.mean(r_lambdas)
         empirical_risk = np.mean([r for r in r_lambdas if r > var_r_lambda])
@@ -67,9 +68,12 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
             C_all = y_cal[key]
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
-                continue
-            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
-            r_lambdas.append(r_lambda_)
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
+                r_lambdas.append(r_lambda_)
+        
+        assert len(r_lambdas) == len(x_cal)
         
         n = len(r_lambdas)
         n_beta = min(int(np.ceil(n*(beta+epsilon)))-1,n-1)
@@ -100,9 +104,10 @@ def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
             C_all = y_cal[key]
             C_lambda_ = [(idx, val) for idx, val in C_all if detoxify_ft_scores[idx] < lambda_]
             if len(C_lambda_) == 0:
-                continue
-            r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
-            r_lambdas.append(r_lambda_)
+                r_lambdas.append(0.0)
+            else:
+                r_lambda_ = detoxify_human_scores[C_lambda_[0][0]]
+                r_lambdas.append(r_lambda_)
         
         n = len(r_lambdas)
         LB = berk_jones(n, 0.95)
@@ -156,10 +161,10 @@ def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, be
         rows_selected_non_selected.append([key, combined_selected, combined_non_selected])
 
         detoxify_human_all.extend([item[3] for item in C_lambda_selected])
-        try:
+        if C_lambda_selected:
             detoxify_human_all_max.append(C_lambda_selected[0][3])
-        except:
-            pass
+        else:
+            detoxify_human_all_max.append(0.0)
         detoxify_ft_all.extend([item[2] for item in C_lambda_non_selected])
 
     df_selected_combined = pd.DataFrame(rows_selected_non_selected, columns=['key', 'C_lambda_selected', 'C_lambda_excluded'])
