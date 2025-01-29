@@ -12,14 +12,13 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gaussian_kde
 from berk_jones import berk_jones
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.neighbors import KernelDensity
+import uuid
 
 def distortion_risk_control(x_cal, y_cal, alpha, beta):
     lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # Range of lambda values for tuning
     risks = []
-    # C_sets = defaultdict(dict)
-
 
     for lambda_ in tqdm(lambda_candidates):
         r_lambdas = []
@@ -37,19 +36,18 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
 
         var_r_lambda = np.percentile(r_lambdas,beta*100)
         n_beta=int(np.ceil(beta * len(r_lambdas))) - 1
-        grid = GridSearchCV(KernelDensity(),
-                    {'bandwidth': np.linspace(0.1, 1.0, 10)},
-                    cv=min(10,len(r_lambdas)-1))
-        grid.fit(np.array(r_lambdas).reshape(-1, 1))
-        kde = grid.best_estimator_
-        pdf = np.exp(kde.score_samples(np.array(r_lambdas).reshape(-1, 1)))
-        density_value = pdf[n_beta]
 
-        sigma_lambda = beta*(1-beta)/density_value**2
+        def bootstrap_percentile(data, percent, B=1000):
+            stats = []
+            for _ in range(B):
+                s = np.random.choice(data, len(data), replace=True)
+                stats.append(np.percentile(s, percent))
+            return np.var(stats, ddof=1)*B/(B-1)
+
+        sigma_lambda = bootstrap_percentile(r_lambdas, beta*100, B=1000)
         risks.append(var_r_lambda+1.645*np.sqrt(sigma_lambda)/np.sqrt(len(r_lambdas)))
 
     risks  = np.array(risks)
-    print(max(risks),min(risks))
     valid_lambdas = lambda_candidates[risks <= alpha]
     if valid_lambdas.size > 0:
         lambda_optimal = np.max(valid_lambdas)
@@ -59,10 +57,9 @@ def distortion_risk_control(x_cal, y_cal, alpha, beta):
 
 
 def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
-    # Calculate epsilon using DKW inequality
     epsilon = np.sqrt(np.log(1 / 0.05) / (2 * n_samples))
     
-    lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # 0.0035, 0.9745
+    lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  
     risks = []
     
     for lambda_ in tqdm(lambda_candidates):
@@ -91,7 +88,7 @@ def distortion_risk_control_DKW(x_cal, y_cal, alpha, beta, n_samples):
 
 def distortion_risk_control_BJ(x_cal, y_cal, alpha, beta, n_samples):
     
-    lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  # 0.0035, 0.9745
+    lambda_candidates = np.linspace(0.0210, 0.8560, 1000)  
     risks = []
     
     for lambda_ in tqdm(lambda_candidates):
@@ -186,12 +183,12 @@ def evaluate_remaining_data(remaining_x_cal, lambda_optimal, remaining_y_cal, be
 
     return mean_human_score, percentile_95_human_score, max_human_score, var_human_score, average_sample_count
 
-def save_scores(scores, folder_name='score_results',use_dkw=False):
+def save_scores(scores, folder_name='score_results'):
     os.makedirs(folder_name, exist_ok=True)
     with open(os.path.join(folder_name, 'scores.pkl'), 'wb') as f:
         pickle.dump(scores, f)
 
-def main(n_trials, f1_score, use_dkw, use_bj, alpha,beta):
+def main(trial_index, f1_score, use_dkw, use_bj, alpha,beta):
     directory = './results_llama2_7B_Real/test_toxic_new'
     conformal_directory = f'./results_llama2_7B_Real/conformal_set/conformal_set_size_F1_{f1_score}.pkl'
     
@@ -231,67 +228,71 @@ def main(n_trials, f1_score, use_dkw, use_bj, alpha,beta):
     with open(conformal_directory, 'rb') as f:
         y_cal = pickle.load(f)
     
-    for key in y_cal:
-        y_cal_current = y_cal[key]['set']
-        lambda_optimal = None
-        
-        all_keys = list(x_cal.keys())
-        random.seed(100)
-        random.shuffle(all_keys)
-        
-        train_keys = all_keys[:6000]
-        remaining_keys = all_keys[6000:]
-        
-        x_cal_train = {k: x_cal[k] for k in train_keys}
-        y_cal_train = {k: y_cal_current[k]  for k in train_keys}
-        x_cal_remaining = {k: x_cal[k] for k in remaining_keys}
-        y_cal_remaining = {k: y_cal_current[k]  for k in remaining_keys}
-        
-        if use_dkw:
-            lambda_optimal = distortion_risk_control_DKW(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
-        elif use_bj:
-            lambda_optimal = distortion_risk_control_BJ(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
-        else:
-            lambda_optimal = distortion_risk_control(x_cal_train, y_cal_train, alpha, beta)
-        
-        folder_name = f'./var_results_detoxify_0.15/results_key_{key}_trial_{n_trials}_score_{f1_score}_alpha_{alpha}_beta_{beta}'
-        if use_dkw: 
-            folder_name += '_use_dkw'
-        if use_bj: 
-            folder_name += '_use_bj'
-        os.makedirs(folder_name, exist_ok=True)
-        if lambda_optimal is not None:
-            with open(os.path.join(folder_name, 'lambda_optimal.txt'), 'w') as f:
-                f.write(f'Lambda Optimal: {lambda_optimal}\n')
+    key = 0
+    y_cal_current = y_cal[key]['set']
+    lambda_optimal = None
     
-        mean_human_score, percentile_95_human_score, max_human_score, beta_cvar_human_score, average_sample_count = evaluate_remaining_data(x_cal_remaining, lambda_optimal, y_cal_remaining,beta)
+    all_keys = list(x_cal.keys())
+    random.seed(int(uuid.uuid4().int % (2**32)) + trial_index)
+    random.shuffle(all_keys)
+    
+    train_keys = all_keys[:6000]
+    remaining_keys = all_keys[6000:]
+    
+    x_cal_train = {k: x_cal[k] for k in train_keys}
+    y_cal_train = {k: y_cal_current[k]  for k in train_keys}
+    x_cal_remaining = {k: x_cal[k] for k in remaining_keys}
+    y_cal_remaining = {k: y_cal_current[k]  for k in remaining_keys}
+    
+    if use_dkw:
+        lambda_optimal = distortion_risk_control_DKW(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
+    elif use_bj:
+        lambda_optimal = distortion_risk_control_BJ(x_cal_train, y_cal_train, alpha, beta, len(train_keys))
+    else:
+        lambda_optimal = distortion_risk_control(x_cal_train, y_cal_train, alpha, beta)
+    
+    if use_dkw:
+        method_folder = "DKW"
+    elif use_bj:
+        method_folder = "BJ"
+    else:
+        method_folder = "DRC"
 
-        scores = {
-            'mean_human_score': mean_human_score,
-            'percentile_95_human_score': percentile_95_human_score,
-            'max_human_score': max_human_score,
-            'beta_cvar_human_score': beta_cvar_human_score,
-            'average_sample_count': average_sample_count
-        }
-        save_scores(scores = scores, folder_name=folder_name, use_dkw = args.use_dkw)
+    base_folder = f'./var_results_detoxify_0.15/{method_folder}/trial_{trial_index}/alpha_{alpha}_beta_{beta}_{f1_score}'
+    os.makedirs(base_folder, exist_ok=True)
+    
+    if lambda_optimal is not None:
+        with open(os.path.join(base_folder, 'lambda_optimal.txt'), 'w') as f:
+            f.write(f'Lambda Optimal: {lambda_optimal}\n')
 
-        with open( os.path.join(folder_name,'results_summary.txt'), 'w') as f:
-            f.write(f"Lambda Optimal: {lambda_optimal}\n")
-            f.write(f"Mean Human Score: {mean_human_score}\n")
-            f.write(f"95th Percentile Human Score: {percentile_95_human_score}\n")
-            f.write(f"Max Human Score: {max_human_score}\n")
-            f.write(f"Beta CVaR Human Score: {beta_cvar_human_score}\n")
-            f.write(f"Average Sample Count: {average_sample_count}\n")
-        break
+    mean_human_score, percentile_95_human_score, max_human_score, beta_var_human_score, average_sample_count = evaluate_remaining_data(x_cal_remaining, lambda_optimal, y_cal_remaining,beta)
+
+    scores = {
+        'optimal_lambda':lambda_optimal,
+        'mean_human_score': mean_human_score,
+        'percentile_95_human_score': percentile_95_human_score,
+        'max_human_score': max_human_score,
+        'var_human_score': beta_var_human_score,
+        'average_sample_count': average_sample_count
+    }
+    save_scores(scores = scores, folder_name=base_folder)
+
+    with open( os.path.join(base_folder,'results_summary.txt'), 'w') as f:
+        f.write(f"Lambda Optimal: {lambda_optimal}\n")
+        f.write(f"Mean Human Score: {mean_human_score}\n")
+        f.write(f"95th Percentile Human Score: {percentile_95_human_score}\n")
+        f.write(f"Max Human Score: {max_human_score}\n")
+        f.write(f"VaR Human Score: {beta_var_human_score}\n")
+        f.write(f"Average Sample Count: {average_sample_count}\n")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_trials", type=int, default=1, help="Number of trials to run")
+    parser.add_argument("--trial_index", type=int, default=0, help="Number of trials to run")
     parser.add_argument("--f1_score", type=float, required=True, help="F1 score to use in filename")
     parser.add_argument("--use_dkw", type=bool, default=False, help="Whether to use the DKW approach")
-    parser.add_argument("--use_bj", type=bool, default=False, help="Whether to use the DKW approach")
-    parser.add_argument("--alpha", type=float, default=0.35, help="Whether to use the DKW approach")
-    parser.add_argument("--beta", type=float, default=0.75, help="Whether to use the DKW approach")
+    parser.add_argument("--use_bj", type=bool, default=False, help="Whether to use the Berk-Jones approach")
+    parser.add_argument("--alpha", type=float, default=0.35, help="Risk control level")
+    parser.add_argument("--beta", type=float, default=0.75, help="Percentile")
     args = parser.parse_args()
     
-    main(args.n_trials, args.f1_score, args.use_dkw,args.use_bj, args.alpha,args.beta)
+    main(args.trial_index, args.f1_score, args.use_dkw,args.use_bj, args.alpha,args.beta)
