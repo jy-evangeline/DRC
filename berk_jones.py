@@ -6,6 +6,10 @@ from typing import Callable
 import scipy
 import numpy as np
 
+# Reference:
+# https://github.com/jakesnell/quantile-risk-control
+# https://arxiv.org/abs/2212.13629
+
 @dataclass(frozen=True)
 class OrderStatsBound:
     """Class for representing an CDF lower bounds based on order statistics."""
