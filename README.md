@@ -1,5 +1,5 @@
-# DRC
+# Distortion Risk Control via L-Statistics
 
 - sampling_var.py: Implementation of VaR calculation
 - sampling.py: Implementations of CVaR calculation
-- berk_jones.py: Utils for calculating Berk Jones bounds
+- berk_jones.py: Utils for calculating Berk Jones bounds. Users should install <https://github.com/mosco/crossing-probability>(crossprob) package.
