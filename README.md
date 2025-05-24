@@ -1,4 +1,4 @@
-# Distortion Risk Control via L-Statistics
+# High Probability Conformal Tail Risk Control for Large Language Model Alignment
 
 - sampling_var.py: Implementation of VaR calculation
 - sampling.py: Implementations of CVaR calculation
